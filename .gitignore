@@ -1,0 +1,24 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Data directories (user workspace, not tracked)
+assets/
+extracts/
+analysis/
+logs/
+
+# Secrets
+.env
+
+# macOS
+.DS_Store
+
+# Build orchestration
+.build/
