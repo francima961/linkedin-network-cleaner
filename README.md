@@ -24,7 +24,7 @@ This tool audits every connection in your network, scores them for relevance, an
 
 <p align="center">
   <img src="docs/images/analysis-verdict.png" alt="Analysis Verdict" width="700">
-  <br><sub>Every connection scored. Keep, remove, or review.</sub>
+  <br><sub>Every connection scored. Color-coded keep/remove/review decisions.</sub>
 </p>
 
 ---
@@ -74,17 +74,22 @@ mkdir my-network && cd my-network
 linkedin-cleaner init
 ```
 
+The setup wizard handles everything — API credentials, brand strategy, personas, target lists, and safelist. Each step guides you with explanations and options.
+
 <p align="center">
-  <img src="docs/images/init-wizard.png" alt="Init Wizard" width="700">
+  <img src="docs/images/init-wizard-1.png" alt="Init Wizard — Credentials" width="700">
+  <br><sub>Step 1: Connect your Edges API and select your LinkedIn identity.</sub>
 </p>
 
-The setup wizard handles everything:
+<p align="center">
+  <img src="docs/images/init-wizard-2.png" alt="Init Wizard — Strategy" width="700">
+  <br><sub>Steps 2-4: Set up AI scoring, brand strategy, and ICP personas.</sub>
+</p>
 
-- **Edges API** — connects to your LinkedIn data ([sign up at edges.run](https://edges.run))
-- **AI scoring** — optional, uses [Anthropic's Claude](https://console.anthropic.com) to score audience fit
-- **Brand strategy & personas** — teach the AI about your business, or skip and fill in later
-- **Target lists** — import your customers, target companies, and prospects as CSVs
-- **Safelist** — protect family and VIPs from ever being touched
+<p align="center">
+  <img src="docs/images/init-wizard-3.png" alt="Init Wizard — Complete" width="700">
+  <br><sub>Steps 5-7: Import target lists, set up your safelist, and generate config.</sub>
+</p>
 
 ### 2. Extract your data
 
@@ -100,7 +105,26 @@ linkedin-cleaner extract --connections --limit 100
 linkedin-cleaner extract --all
 ```
 
+The tool shows you an extraction plan with credit estimates before starting, then displays live progress bars as data comes in.
+
+<p align="center">
+  <img src="docs/images/extraction-plan.png" alt="Extraction Plan" width="700">
+  <br><sub>The extraction plan — credit estimate, time estimate, what you'll get.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/extract-progress-1.png" alt="Extraction Progress" width="700">
+  <br><sub>Live progress bars as your data is pulled.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/extract-progress-3.png" alt="Extraction Complete" width="700">
+  <br><sub>Extraction complete — all data types extracted with record counts.</sub>
+</p>
+
 Full extraction takes 1.5–2.5 hours for a large network. You can interrupt and resume anytime with `--resume`.
+
+> **Edges API credits**: Each extraction uses ~1 credit per API page. Trial accounts start with 100 credits. A full extraction of a 10K network uses ~250 credits. Check your balance at [app.edges.run](https://app.edges.run).
 
 ### 3. Analyze your network
 
@@ -108,14 +132,11 @@ Full extraction takes 1.5–2.5 hours for a large network. You can interrupt and
 linkedin-cleaner analyze
 ```
 
-Before running, you'll review your keep signals:
-- **DM threshold** — how many messages = an active relationship? (default: 5)
-- **Engagement signals** — keep people who liked your posts? Commented? Toggle each one
-
-The pipeline then scores every connection across 9 dimensions: inbox activity, post engagement, content interactions, profile enrichment, customer matching, target accounts, target prospects, shared experience, and AI audience fit.
+Before running, you'll review your keep signals — DM threshold, engagement toggles — so the analysis matches your definition of a valuable connection.
 
 <p align="center">
   <img src="docs/images/analysis-pipeline.png" alt="Analysis Pipeline" width="700">
+  <br><sub>The 9-step pipeline scoring every connection.</sub>
 </p>
 
 ### 4. See the results
@@ -124,13 +145,13 @@ The pipeline then scores every connection across 9 dimensions: inbox activity, p
 linkedin-cleaner status
 ```
 
-Your full dashboard. Or preview cleanup decisions:
+Your full dashboard — configuration, extracted data, pipeline progress, and the verdict.
 
 ```bash
 linkedin-cleaner clean connections --dry-run
 ```
 
-Nothing is removed without your explicit approval.
+Preview every decision before anything happens. Nothing is removed without your explicit approval.
 
 ---
 
