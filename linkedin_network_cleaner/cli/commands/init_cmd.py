@@ -838,6 +838,13 @@ def init_command():
         d.mkdir(parents=True, exist_ok=True)
     print_success("Workspace directories created")
 
+    # Copy CLAUDE.md for Claude Code integration
+    claude_md_src = templates_dir / "CLAUDE.md"
+    claude_md_dst = config.WORKSPACE_DIR / "CLAUDE.md"
+    if claude_md_src.exists() and not claude_md_dst.exists():
+        shutil.copy2(claude_md_src, claude_md_dst)
+        print_success("CLAUDE.md created (Claude Code integration)")
+
     # ── Summary ──────────────────────────────────────────────────────────
     summary_data = {
         "Edges API": "connected" + (f" ({identity_name})" if identity_name else ""),
@@ -883,7 +890,14 @@ def init_command():
     console.print()
     console.print(f"  [{theme.BRAND_DIM}]{theme.DIVIDER_LIGHT}[/{theme.BRAND_DIM}]")
     console.print()
-    console.print(f"  [dim]Need help anytime?[/dim]")
+    console.print(f"  [{theme.BRAND_GREEN}]{theme.BULLET}[/{theme.BRAND_GREEN}] [bold]Use with Claude Code[/bold] (recommended)")
+    console.print(f"     Open Claude Code in this directory and let it handle everything.")
+    console.print(f"     Claude can run commands, generate missing files, and explain results.")
+    console.print(f"     A CLAUDE.md is already in your workspace — just open Claude Code.")
+    console.print()
+    console.print(f"  [{theme.BRAND_DIM}]{theme.DIVIDER_LIGHT}[/{theme.BRAND_DIM}]")
+    console.print()
+    console.print(f"  [dim]Or run it manually:[/dim]")
     console.print(f"  [dim]  linkedin-cleaner --help                   All commands[/dim]")
     console.print(f"  [dim]  linkedin-cleaner <command> --help         Command details[/dim]")
     console.print(f"  [dim]  linkedin-cleaner doctor                   Check your setup[/dim]")
