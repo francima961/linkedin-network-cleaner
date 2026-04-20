@@ -18,11 +18,6 @@ This tool audits every connection in your network, scores them for relevance, an
 ## What you'll see
 
 <p align="center">
-  <img src="docs/images/status-dashboard.png" alt="Status Dashboard" width="700">
-  <br><sub>Your full network dashboard — one command, full visibility.</sub>
-</p>
-
-<p align="center">
   <img src="docs/images/analysis-verdict.png" alt="Analysis Verdict" width="700">
   <br><sub>Every connection scored. Color-coded keep/remove/review decisions.</sub>
 </p>
@@ -273,8 +268,3 @@ No. Steps 1-8 work without it and make good decisions using engagement data, tar
 **How many Edges credits do I need?**<br>
 ~1 credit per API page. A full 10K-connection extraction uses ~250 credits. Trial accounts get 100 credits — enough for `--limit 100` testing.
 
----
-
-<p align="center">
-  <sub>Built by <a href="https://linkedin.com/in/thefrancis">Marc Francis</a></sub>
-</p>
