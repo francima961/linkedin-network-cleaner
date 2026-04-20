@@ -264,10 +264,10 @@ def clean_connections(
     # Keep breakdown by category
     keep_df = master_df[master_df["decision"] == "keep"]
     keep_categories = []
-    if "real_network" in keep_df.columns:
-        rn = keep_df["real_network"].sum()
+    if "active_dms" in keep_df.columns:
+        rn = keep_df["active_dms"].sum()
         if rn > 0:
-            keep_categories.append(("Real Network (active inbox)", int(rn), keep_count))
+            keep_categories.append(("Active DM relationships", int(rn), keep_count))
     if "is_customer" in keep_df.columns:
         cust = keep_df["is_customer"].sum() + keep_df.get("is_former_customer", pd.Series(0)).sum()
         if cust > 0:
@@ -424,8 +424,8 @@ def clean_unfollow(
     else:
         console.print("  [bold]Specify what to unfollow:[/bold]")
         console.print()
-        console.print("  [cyan]linkedin-cleaner clean unfollow --profile-url URL[/cyan]")
-        console.print("  [cyan]linkedin-cleaner clean unfollow --from-file decisions.csv[/cyan]")
+        console.print("  [#ff8c00]linkedin-cleaner clean unfollow --profile-url URL[/#ff8c00]")
+        console.print("  [#ff8c00]linkedin-cleaner clean unfollow --from-file decisions.csv[/#ff8c00]")
         console.print()
         raise typer.Exit(0)
 

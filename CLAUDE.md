@@ -26,7 +26,7 @@ linkedin_network_cleaner/
 │   ├── edges_client.py     # Generic Edges API client
 │   ├── extractors.py       # LinkedIn data extraction (11 methods)
 │   ├── enrich_profiles.py  # Concurrent profile enrichment
-│   ├── analyzer.py         # 8-step analysis pipeline
+│   ├── analyzer.py         # 9-step analysis pipeline
 │   ├── ai_scorer.py        # Two-tier AI scoring (Haiku triage + Sonnet deep)
 │   ├── decision_engine.py  # Rules-based keep/review/remove decisions
 │   ├── invite_analyzer.py  # Sent invitation analysis

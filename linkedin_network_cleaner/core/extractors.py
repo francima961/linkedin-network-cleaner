@@ -27,22 +27,26 @@ class AudienceExtractor:
 
     # ── Individual Extractors ─────────────────────────────────────────────
 
-    def extract_connections(self):
+    def extract_connections(self, progress_callback=None, max_results=None):
         """Extract all connections. Direct mode, no input needed."""
         results, meta = self.client.paginated_call(
             "extract-connections",
             direct_mode=True,
             dedup_key="linkedin_profile_id",
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("connections", results, meta)
         return results, meta
 
-    def extract_conversations(self):
+    def extract_conversations(self, progress_callback=None, max_results=None):
         """Extract all conversations. Direct mode, no input needed."""
         results, meta = self.client.paginated_call(
             "extract-conversations",
             direct_mode=True,
             dedup_key="linkedin_thread_id",
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("conversations", results, meta)
         return results, meta
@@ -58,27 +62,31 @@ class AudienceExtractor:
         )
         return results, meta
 
-    def extract_followers(self):
+    def extract_followers(self, progress_callback=None, max_results=None):
         """Extract all followers. Direct mode, no input needed."""
         results, meta = self.client.paginated_call(
             "extract-followers",
             direct_mode=True,
             dedup_key="linkedin_profile_id",
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("followers", results, meta)
         return results, meta
 
-    def extract_profile_viewers(self):
+    def extract_profile_viewers(self, progress_callback=None, max_results=None):
         """Extract profile viewers. Direct mode, no input needed."""
         results, meta = self.client.paginated_call(
             "extract-profile-viewers",
             direct_mode=True,
             dedup_key="linkedin_profile_id",
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("profile_viewers", results, meta)
         return results, meta
 
-    def extract_posts(self, profile_url):
+    def extract_posts(self, profile_url, progress_callback=None, max_results=None):
         """Extract all posts for a profile. cursor_only because page-number
         fallback loops infinitely for this endpoint (API re-serves same posts)."""
         results, meta = self.client.paginated_call(
@@ -87,6 +95,8 @@ class AudienceExtractor:
             direct_mode=False,
             dedup_key="linkedin_post_id",
             cursor_only=True,
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("posts", results, meta)
         return results, meta
@@ -127,42 +137,48 @@ class AudienceExtractor:
         )
         return results, meta
 
-    def extract_reaction_activity(self, profile_url):
+    def extract_reaction_activity(self, profile_url, progress_callback=None, max_results=None):
         """Extract reaction activity for a profile."""
         results, meta = self.client.paginated_call(
             "extract-people-reaction-activity",
             input_data={"linkedin_profile_url": profile_url},
             direct_mode=False,
             dedup_key="linkedin_post_id",
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("reaction_activity", results, meta)
         return results, meta
 
-    def extract_comment_activity(self, profile_url):
+    def extract_comment_activity(self, profile_url, progress_callback=None, max_results=None):
         """Extract comment activity for a profile."""
         results, meta = self.client.paginated_call(
             "extract-people-comment-activity",
             input_data={"linkedin_profile_url": profile_url},
             direct_mode=False,
             dedup_key="linkedin_post_id",
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("comment_activity", results, meta)
         return results, meta
 
-    def extract_sent_invitations(self):
+    def extract_sent_invitations(self, progress_callback=None, max_results=None):
         """Extract all pending sent invitations. Direct mode, no input needed."""
         results, meta = self.client.paginated_call(
             "extract-sent-invitations",
             direct_mode=True,
             dedup_key="linkedin_invitation_id",
             query_params={"page_size": "100"},
+            progress_callback=progress_callback,
+            max_results=max_results,
         )
         self._save_extract("sent_invitations", results, meta)
         return results, meta
 
     # ── Chain Methods (with checkpointing) ────────────────────────────────
 
-    def extract_all_messages(self, conversations=None, resume=False):
+    def extract_all_messages(self, conversations=None, resume=False, progress_callback=None, max_items=None):
         """
         Extract messages from ALL conversation threads.
         Checkpoints every 50 threads. On LIMIT_REACHED or crash: saves progress.
@@ -188,7 +204,11 @@ class AudienceExtractor:
         limit_reached = False
         checkpoint_interval = 50
 
-        for i in range(start_index, len(conversations)):
+        end_index = len(conversations)
+        if max_items:
+            end_index = min(start_index + max_items, len(conversations))
+
+        for i in range(start_index, end_index):
             conv = conversations[i]
             thread_url = conv.get("linkedin_thread_url") or conv.get("linkedin_thread_id")
             if not thread_url:
@@ -210,6 +230,11 @@ class AudienceExtractor:
             if msgs:
                 thread_id = conv.get("linkedin_thread_id", thread_url)
                 all_messages[thread_id] = msgs
+
+            # Progress callback: report thread-level progress
+            if progress_callback:
+                total_msgs = sum(len(m) for m in all_messages.values())
+                progress_callback(i + 1, len(conversations), total_msgs)
 
             # Checkpoint every N threads
             if (i + 1 - start_index) % checkpoint_interval == 0:
@@ -234,7 +259,7 @@ class AudienceExtractor:
 
         return flat_messages, meta
 
-    def extract_all_post_engagement(self, posts=None, resume=False):
+    def extract_all_post_engagement(self, posts=None, resume=False, progress_callback=None, max_items=None):
         """
         Extract likers + commenters + reposters for ALL posts.
         Checkpoints every 10 posts. On LIMIT_REACHED or crash: saves progress.
@@ -260,7 +285,11 @@ class AudienceExtractor:
         limit_reached = False
         checkpoint_interval = 10
 
-        for i in range(start_index, len(posts)):
+        end_index = len(posts)
+        if max_items:
+            end_index = min(start_index + max_items, len(posts))
+
+        for i in range(start_index, end_index):
             post = posts[i]
             post_url = post.get("linkedin_post_url") or post.get("post_url")
             post_id = post.get("linkedin_post_id", str(i))
@@ -303,6 +332,15 @@ class AudienceExtractor:
                 errors.extend(commenter_meta["errors"])
             if reposter_meta.get("errors"):
                 errors.extend(reposter_meta["errors"])
+
+            # Progress callback: report post-level progress
+            if progress_callback:
+                total_eng = (
+                    sum(len(v) for v in engagement["likers"].values())
+                    + sum(len(v) for v in engagement["commenters"].values())
+                    + sum(len(v) for v in engagement["reposters"].values())
+                )
+                progress_callback(i + 1, len(posts), total_eng)
 
             # Checkpoint every N posts
             if (i + 1 - start_index) % checkpoint_interval == 0:

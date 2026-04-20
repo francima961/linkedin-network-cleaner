@@ -1,5 +1,6 @@
 """linkedin-cleaner analyze — Run the 9-step analysis pipeline."""
 
+import glob as globmod
 import json
 import logging
 from datetime import datetime, timezone
@@ -9,12 +10,16 @@ import typer
 
 from ..ui import (
     console,
+    print_banner,
     print_header,
+    print_section,
     print_step,
     print_success,
     print_suggested_next,
+    print_comment,
     show_error,
     show_info,
+    show_warning,
     make_summary_table,
     create_scoring_progress,
     theme,
@@ -37,6 +42,17 @@ STEPS = [
     (8, "match_target_prospects", "Match target prospects"),
     (9, "ai_scoring", "AI scoring (two-tier)"),
 ]
+
+# Map steps to the extract data they need to produce meaningful results
+STEP_DATA_REQUIREMENTS = {
+    2: (["conversations", "messages_by_thread"], "inbox scoring"),
+    3: (["post_engagement_by_post"], "post engagement scoring"),
+    4: (["reaction_activity", "comment_activity"], "content interaction scoring"),
+    5: (["enrichment"], "profile matching & shared experience detection"),
+    6: (["customers"], "customer matching"),      # special: checks assets/Customers/
+    7: (["accounts"], "target account matching"),  # special: checks assets/Accounts/
+    8: (["prospects"], "target prospect matching"), # special: checks assets/Prospects/
+}
 
 STATE_FILE = "pipeline_state.json"
 
@@ -89,12 +105,93 @@ def _load_snapshot(path_str):
     return pd.read_csv(path)
 
 
+def _check_extract_exists(name):
+    """Check if an extract file exists (excluding checkpoints)."""
+    pattern = str(config.EXTRACTS_DIR / f"{name}_*.json")
+    files = [f for f in sorted(globmod.glob(pattern)) if "_checkpoint_" not in Path(f).name]
+    if not files:
+        return False, 0
+    # Get record count from latest file
+    try:
+        payload = json.loads(Path(files[-1]).read_text(encoding="utf-8"))
+        count = payload.get("record_count", 0)
+    except Exception:
+        count = 0
+    return True, count
+
+
+def _check_asset_dir_has_csvs(subdir_name):
+    """Check if an assets subdirectory has CSV files."""
+    asset_dir = config.ASSETS_DIR / subdir_name
+    if not asset_dir.exists():
+        return False
+    return bool(list(asset_dir.glob("*.csv")))
+
+
+def _preflight_check():
+    """Scan extracts and assets for data availability. Returns dict of {name: (exists, count/bool, purpose)}."""
+    data_status = {}
+
+    # Extract-based data
+    extract_types = {
+        "connections": "connections list (required)",
+        "followers": "follower overlap detection",
+        "conversations": "inbox activity scoring",
+        "messages_by_thread": "message depth analysis",
+        "posts": "post extraction",
+        "post_engagement_by_post": "engagement scoring",
+        "post_likers": "liker tracking",
+        "post_commenters": "commenter tracking",
+        "reaction_activity": "content interaction scoring",
+        "comment_activity": "content interaction scoring",
+        "sent_invitations": "invitation analysis",
+        "enrichment": "profile matching & AI scoring",
+    }
+    for name, purpose in extract_types.items():
+        exists, count = _check_extract_exists(name)
+        data_status[name] = (exists, count, purpose)
+
+    # Asset-based data
+    for subdir, purpose in [
+        ("Customers", "customer matching"),
+        ("Accounts", "target account matching"),
+        ("Prospects", "target prospect matching"),
+    ]:
+        has_csvs = _check_asset_dir_has_csvs(subdir)
+        data_status[subdir.lower()] = (has_csvs, 0, purpose)
+
+    return data_status
+
+
+def _has_data_for_step(step_num, data_status):
+    """Check if a step has the data it needs to produce meaningful results."""
+    if step_num == 1:
+        return True  # connections already verified
+    if step_num == 9:
+        return True  # AI scoring has its own checks
+
+    reqs = STEP_DATA_REQUIREMENTS.get(step_num)
+    if not reqs:
+        return True
+
+    required_names, _ = reqs
+    # For asset-based steps (6-8), check the asset dirs
+    if step_num == 6:
+        return data_status.get("customers", (False,))[0]
+    if step_num == 7:
+        return data_status.get("accounts", (False,))[0]
+    if step_num == 8:
+        return data_status.get("prospects", (False,))[0]
+
+    # For extract-based steps, at least one of the required extracts must exist
+    return any(data_status.get(name, (False,))[0] for name in required_names)
+
+
 def analyze_command(
     resume: bool = typer.Option(False, help="Resume from last completed step"),
     no_ai: bool = typer.Option(False, "--no-ai", help="Skip AI scoring (steps 1-8 only)"),
     step: int = typer.Option(None, "--step", help="Run only step N (1-9)", min=1, max=9),
-    inbox_max: int = typer.Option(None, "--inbox-max", help="Max inbox message threshold"),
-    inbox_min: int = typer.Option(None, "--inbox-min", help="Min inbox message threshold"),
+    dm_threshold: int = typer.Option(None, "--dm-threshold", help="Min total DMs for active relationship (default 5)"),
     ai_batch_size: int = typer.Option(None, "--ai-batch-size", help="Profiles per AI API call"),
     profile_url: str = typer.Option(None, "--profile-url", help="Your LinkedIn profile URL"),
     limit: int = typer.Option(None, "--limit", help="Limit to N rows after step 1 (testing)"),
@@ -109,10 +206,17 @@ def analyze_command(
 
     # Load config
     cfg = config.load_config()
-    inbox_max_val = inbox_max if inbox_max is not None else cfg["analyze"]["inbox_max"]
-    inbox_min_val = inbox_min if inbox_min is not None else cfg["analyze"]["inbox_min"]
+    dm_threshold_val = dm_threshold if dm_threshold is not None else cfg["analyze"]["dm_threshold"]
     ai_batch = ai_batch_size if ai_batch_size is not None else cfg["analyze"]["ai_batch_size"]
     ai_delay = delay if delay is not None else 1.0
+
+    # Signal config from toml
+    signal_config = {
+        "keep_likers": cfg["analyze"].get("keep_likers", True),
+        "keep_commenters": cfg["analyze"].get("keep_commenters", True),
+        "keep_reposters": cfg["analyze"].get("keep_reposters", True),
+        "keep_content_interactions": cfg["analyze"].get("keep_content_interactions", True),
+    }
 
     # Check for Anthropic key
     if not config.ANTHROPIC_API_KEY and not no_ai:
@@ -126,8 +230,7 @@ def analyze_command(
 
     total_steps = 8 if no_ai else 9
 
-    # Pre-flight: check extracts exist
-    import glob as globmod
+    # Pre-flight: check connections exist (hard requirement)
     conn_files = sorted(globmod.glob(str(config.EXTRACTS_DIR / "connections_*.json")))
     if not conn_files:
         show_error(
@@ -136,9 +239,160 @@ def analyze_command(
             fix="linkedin-cleaner extract --connections",
         )
 
+    config.ensure_dirs()
+
+    # ── Banner + Pre-flight ──────────────────────────────────────────────
+    print_banner()
+    console.print(f"  [{theme.BRAND_DIM}]v{theme.APP_VERSION}[/{theme.BRAND_DIM}]  [{theme.BRAND_WHITE}]Analysis Pipeline[/{theme.BRAND_WHITE}]")
+    console.print(f"  [{theme.BRAND_DIM}]Let's find out who actually belongs in your network.[/{theme.BRAND_DIM}]")
+
+    # Pre-flight: data availability check
+    data_status = _preflight_check()
+
+    print_section("Pre-flight Check")
+
+    key_extracts = [
+        ("connections", "Connections"),
+        ("followers", "Followers"),
+        ("conversations", "Conversations"),
+        ("enrichment", "Enrichment"),
+        ("post_engagement_by_post", "Post engagement"),
+        ("reaction_activity", "Reaction activity"),
+        ("comment_activity", "Comment activity"),
+    ]
+    key_assets = [
+        ("customers", "Customer list"),
+        ("accounts", "Target accounts"),
+        ("prospects", "Target prospects"),
+    ]
+
+    available_count = 0
+    for name, label in key_extracts:
+        exists, count, purpose = data_status.get(name, (False, 0, ""))
+        if exists:
+            available_count += 1
+            console.print(f"  {theme.CHECK_OK} {label:<22} [bold]{count:,}[/bold] records")
+        else:
+            console.print(f"  {theme.CHECK_SKIP} {label:<22} [dim]not extracted {theme.ARROW} {purpose} skipped[/dim]")
+
+    console.print()
+    missing_assets = []
+    for name, label in key_assets:
+        exists, _, purpose = data_status.get(name, (False, 0, ""))
+        if exists:
+            available_count += 1
+            console.print(f"  {theme.CHECK_OK} {label:<22} configured")
+        else:
+            missing_assets.append(name)
+            console.print(f"  {theme.CHECK_WARN} {label:<22} [{theme.BRAND_AMBER}]none {theme.ARROW} {purpose} skipped[/{theme.BRAND_AMBER}]")
+
+    # Check safelist
+    safelist = config.load_safelist()
+    safelist_indicator = theme.CHECK_OK if safelist else theme.CHECK_WARN
+    if safelist:
+        console.print(f"  {safelist_indicator} {'Safelist':<22} {len(safelist)} protected")
+    else:
+        console.print(f"  {safelist_indicator} {'Safelist':<22} [{theme.BRAND_AMBER}]none — no special protection[/{theme.BRAND_AMBER}]")
+
+    total_signals = len(key_extracts) + len(key_assets)
+    console.print()
+    if available_count == total_signals:
+        print_comment("All signals loaded. Maximum analysis accuracy.")
+    elif available_count >= 5:
+        print_comment(f"{available_count}/{total_signals} signals available. Good enough to be useful.")
+    elif available_count >= 3:
+        print_comment(f"{available_count}/{total_signals} signals. We'll work with what we have.")
+    else:
+        print_comment(f"{available_count}/{total_signals} signals. Results will be limited — consider extracting more data.")
+
+    # Protection gap warning — shown before pipeline starts
+    if missing_assets or not safelist:
+        console.print()
+        console.print(f"  [{theme.BRAND_AMBER}]{theme.CHECK_WARN} [bold]Heads up:[/bold] Without protection lists, the analysis might[/{theme.BRAND_AMBER}]")
+        console.print(f"  [{theme.BRAND_AMBER}]  recommend removing people you actually want to keep.[/{theme.BRAND_AMBER}]")
+        if "customers" in missing_assets:
+            console.print(f"  [{theme.BRAND_AMBER}]  {theme.BULLET} No customer list — customer connections won't be auto-kept[/{theme.BRAND_AMBER}]")
+        if "accounts" in missing_assets:
+            console.print(f"  [{theme.BRAND_AMBER}]  {theme.BULLET} No target accounts — prospect connections may score low[/{theme.BRAND_AMBER}]")
+        if not safelist:
+            console.print(f"  [{theme.BRAND_AMBER}]  {theme.BULLET} No safelist — family and VIPs have no special protection[/{theme.BRAND_AMBER}]")
+        console.print()
+        console.print(f"  [dim]The cleanup is always dry-run first, so nothing happens without your approval.[/dim]")
+        console.print(f"  [dim]But for best results: linkedin-cleaner init to add these files.[/dim]")
+
+    # Check minimum viable set
+    minimum_set = ["connections", "followers", "conversations"]
+    missing_minimum = [n for n in minimum_set if not data_status.get(n, (False,))[0]]
+    if missing_minimum:
+        missing_flags = " --".join(n.replace("_", "-") for n in missing_minimum)
+        show_warning(
+            "Limited data available",
+            f"For meaningful analysis, extract at least: connections, followers, conversations.\n"
+            f"Missing: {', '.join(missing_minimum)}\n\n"
+            f"Run: [#ff8c00]linkedin-cleaner extract --{missing_flags}[/#ff8c00]",
+        )
+        proceed = typer.prompt("  Continue anyway? [y/N]", default="N")
+        if proceed.strip().lower() != "y":
+            raise typer.Exit(0)
+
+    # ── Signal configuration — let user review and adjust before analysis ──
+    print_section("Keep Signals")
+
+    G = theme.BRAND_GREEN
+    P = theme.BRAND_PURPLE
+    D = theme.BRAND_DIM
+    A = theme.BRAND_AMBER
+    O = theme.BRAND_ORANGE
+
+    console.print(f"  [{D}]The analysis uses these signals to decide who to keep.[/{D}]")
+    console.print(f"  [{D}]Review and adjust before running — or press Enter to use defaults.[/{D}]")
+    console.print()
+
+    # DM threshold
+    console.print(f"  [{G}]▸[/{G}] [bold]DM threshold[/bold]")
+    console.print(f"    Keep connections with [{P}]{dm_threshold_val}[/{P}]+ total messages (both parties replied)")
+    change_dm = typer.prompt(f"  Change threshold? (Enter = {dm_threshold_val})", default=str(dm_threshold_val))
+    try:
+        dm_threshold_val = int(change_dm.strip())
+    except ValueError:
+        pass
+    console.print()
+
+    # Engagement signals
+    signal_labels = [
+        ("keep_likers", "Likers", "People who liked your posts"),
+        ("keep_commenters", "Commenters", "People who commented on your posts"),
+        ("keep_reposters", "Reposters", "People who reposted your content"),
+        ("keep_content_interactions", "Your interactions", "People whose posts you liked or commented on"),
+    ]
+
+    console.print(f"  [{G}]▸[/{G}] [bold]Engagement signals[/bold]")
+    console.print(f"    [{D}]Each signal adds people to the KEEP list. Disable to be stricter.[/{D}]")
+    console.print()
+
+    for key, label, desc in signal_labels:
+        current = signal_config[key]
+        indicator = f"[{G}]ON[/{G}]" if current else f"[{theme.BRAND_RED}]OFF[/{theme.BRAND_RED}]"
+        console.print(f"    {indicator}  {label:<22s} [{D}]{desc}[/{D}]")
+
+    console.print()
+    change_signals = typer.prompt("  Adjust signals? [y/N]", default="N")
+    if change_signals.strip().lower() == "y":
+        for key, label, desc in signal_labels:
+            current = signal_config[key]
+            current_str = "Y" if current else "N"
+            answer = typer.prompt(f"    Keep {label}? [Y/n]", default=current_str)
+            signal_config[key] = answer.strip().lower() != "n"
+        console.print()
+        console.print(f"  [{G}]✓[/{G}] Signals updated")
+
+    console.print()
+
+    # Suppress raw logger warnings from analyzer (pre-flight check covers this now)
+    logging.getLogger("linkedin_network_cleaner.core.analyzer").setLevel(logging.ERROR)
+
     # Resolve profile URL for step 5
     if not profile_url:
-        # Try to get from me endpoint
         from ...core.edges_client import EdgesClient
         try:
             client = EdgesClient(api_key=config.API_KEY, identity_uuid=config.IDENTITY_UUID)
@@ -151,12 +405,10 @@ def analyze_command(
         except Exception:
             pass
         if not profile_url:
-            console.print("  [yellow]!![/yellow] Could not resolve profile URL. Step 5 may be limited.")
+            console.print(f"  {theme.CHECK_WARN} Could not resolve profile URL. Step 5 may be limited.")
             console.print("  [dim]Provide with: --profile-url https://linkedin.com/in/yourname[/dim]")
 
-    config.ensure_dirs()
-
-    print_header(theme.COPY["analyze_header"])
+    print_section("Running Pipeline")
 
     analyzer = NetworkAnalyzer(config.EXTRACTS_DIR, config.ASSETS_DIR, config.ANALYSIS_DIR)
 
@@ -184,6 +436,7 @@ def analyze_command(
         state = {
             "started_at": datetime.now(timezone.utc).isoformat(),
             "completed_steps": [],
+            "step_outcomes": {},
             "current_step": None,
             "master_snapshot": None,
             "followers_aside_snapshot": None,
@@ -203,6 +456,19 @@ def analyze_command(
         if no_ai and step_num == 9:
             continue
 
+        # Check if this step has data to work with
+        has_data = _has_data_for_step(step_num, data_status)
+
+        if not has_data:
+            # Skip this step — no data available
+            reqs = STEP_DATA_REQUIREMENTS.get(step_num, ([], ""))
+            _, purpose = reqs
+            console.print(f"\n  {theme.CHECK_SKIP} Step {step_num}/{total_steps}  {step_name} [dim]— skipped (no data for {purpose})[/dim]")
+            state["step_outcomes"][str(step_num)] = "skipped"
+            state["completed_steps"].append(step_num)
+            _save_state(state)
+            continue
+
         print_step(step_num, total_steps, step_name)
         state["current_step"] = step_num
 
@@ -219,9 +485,9 @@ def analyze_command(
                 )
 
             elif step_num == 2:
-                master_df = analyzer.analyze_inbox(master_df, inbox_max=inbox_max_val, inbox_min=inbox_min_val)
-                real_count = master_df["real_network"].sum() if "real_network" in master_df.columns else 0
-                console.print(f"  [dim]Real network: {int(real_count):,} connections[/dim]")
+                master_df = analyzer.analyze_inbox(master_df, dm_threshold=dm_threshold_val)
+                active_dms = master_df["active_dms"].sum() if "active_dms" in master_df.columns else 0
+                console.print(f"  [dim]Active DM relationships ({dm_threshold_val}+ msgs): [{theme.BRAND_PURPLE}]{int(active_dms):,}[/{theme.BRAND_PURPLE}][/dim]")
 
             elif step_num == 3:
                 master_df = analyzer.analyze_post_engagement(master_df)
@@ -272,6 +538,35 @@ def analyze_command(
                         fix="linkedin-cleaner init",
                     )
 
+                # Pre-check: verify Anthropic API credits before starting
+                try:
+                    import anthropic as _anthropic
+                    _test_client = _anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+                    _test_client.messages.create(
+                        model="claude-haiku-4-5-20251001", max_tokens=1,
+                        messages=[{"role": "user", "content": "."}],
+                    )
+                except _anthropic.AuthenticationError:
+                    show_error(
+                        "Invalid Anthropic API key",
+                        "The key in .env is not valid.",
+                        fix="Update ANTHROPIC_API_KEY in .env with a valid key",
+                    )
+                except Exception as _e:
+                    _err = str(_e)
+                    if "credit balance" in _err.lower() or "billing" in _err.lower():
+                        show_warning(
+                            "No Anthropic credits",
+                            "Your Anthropic account has no credits. AI scoring cannot run.\n"
+                            "Add credits at [#ff8c00]console.anthropic.com[/#ff8c00], then re-run:\n\n"
+                            "  [#ff8c00]linkedin-cleaner analyze --resume --step 9[/#ff8c00]",
+                        )
+                        console.print(f"  [dim]Steps 1-8 are complete. Skipping AI scoring.[/dim]")
+                        state["step_outcomes"][str(step_num)] = "skipped"
+                        state["completed_steps"].append(step_num)
+                        _save_state(state)
+                        break
+
                 scorer = TwoTierScorer(
                     api_key=config.ANTHROPIC_API_KEY,
                     brand_strategy_path=brand_path,
@@ -280,7 +575,6 @@ def analyze_command(
 
                 # Load enrichment data for deep scoring
                 enrichment_data = []
-                import glob as globmod
                 enrich_files = sorted(globmod.glob(str(config.EXTRACTS_DIR / "enrichment_*.json")))
                 if enrich_files:
                     enrich_payload = json.loads(Path(enrich_files[-1]).read_text(encoding="utf-8"))
@@ -288,7 +582,7 @@ def analyze_command(
 
                 # Estimate profiles needing scoring (after signal pre-filter)
                 needs_scoring_est = len(master_df[
-                    (master_df.get("real_network", False) != True) &
+                    (master_df.get("active_dms", False) != True) &
                     (master_df.get("total_messages", 0).fillna(0).astype(float) == 0) &
                     (master_df.get("is_customer", False).fillna(False) == False) &
                     (master_df.get("is_target_account", False).fillna(False) == False) &
@@ -312,9 +606,9 @@ def analyze_command(
                 proceed = typer.prompt("  Continue with AI scoring? [Y/n]", default="Y")
                 if proceed.strip().lower() == "n":
                     console.print("  [dim]Skipping AI scoring. Steps 1-8 complete.[/dim]")
-                    # Save snapshot + update state, skip scoring
                     snapshot = _save_snapshot(master_df, step_num)
                     state["master_snapshot"] = snapshot
+                    state["step_outcomes"][str(step_num)] = "skipped"
                     state["completed_steps"].append(step_num)
                     _save_state(state)
                     break
@@ -343,6 +637,7 @@ def analyze_command(
             # Save snapshot + update state
             snapshot = _save_snapshot(master_df, step_num)
             state["master_snapshot"] = snapshot
+            state["step_outcomes"][str(step_num)] = "complete"
             state["completed_steps"].append(step_num)
             _save_state(state)
             print_success(f"Step {step_num} complete")
@@ -363,30 +658,70 @@ def analyze_command(
         master_df.to_csv(final_csv, index=False)
         print_success(f"Saved {final_csv.name} ({len(master_df):,} rows)")
 
-    # ── Summary ──────────────────────────────────────────────────────────
+    # ── Results ───────────────────────────────────────────────────────────
     if master_df is not None:
-        summary = {
-            "Total connections": len(master_df),
-        }
+        outcomes = state.get("step_outcomes", {})
+        completed_count = sum(1 for v in outcomes.values() if v == "complete")
+        skipped_count = sum(1 for v in outcomes.values() if v == "skipped")
+
+        # Dynamic title
+        if skipped_count == 0:
+            result_title = "The Verdict"
+            result_comment = "Every connection has been weighed. Here's what we found."
+        elif completed_count <= 2:
+            result_title = "Preliminary Results"
+            result_comment = "Limited data means limited insight. Extract more for the full picture."
+        else:
+            result_title = "Partial Results"
+            result_comment = f"{skipped_count} step{'s' if skipped_count != 1 else ''} had no data. It's a start."
+
+        print_section(result_title)
+        print_comment(result_comment)
+        console.print()
+
+        total = len(master_df)
+        console.print(f"  [bold]Total connections[/bold]{total:>30,}")
+
+        if "active_dms" in master_df.columns:
+            real = int(master_df["active_dms"].sum())
+            pct = f"({real / total * 100:.0f}%)" if total else ""
+            console.print(f"  Real network (10+ msgs){real:>22,}  [dim]{pct}[/dim]")
+
         for col, label in [
-            ("real_network", "Real network"),
             ("is_customer", "Customers"),
             ("is_target_account", "Target accounts"),
             ("is_target_prospect", "Target prospects"),
         ]:
             if col in master_df.columns:
-                summary[label] = int(master_df[col].sum())
+                val = int(master_df[col].sum())
+                if val > 0:
+                    console.print(f"  {label}{val:>35,}")
+
         if "ai_audience_fit" in master_df.columns:
             scored = master_df["ai_audience_fit"].notna()
-            summary["AI scored"] = int(scored.sum())
-            summary["Avg AI score"] = f"{master_df.loc[scored, 'ai_audience_fit'].mean():.1f}"
+            ai_count = int(scored.sum())
+            if ai_count > 0:
+                avg_score = master_df.loc[scored, "ai_audience_fit"].mean()
+                console.print(f"  AI scored{ai_count:>35,}")
+                console.print(f"  Avg audience fit{avg_score:>28.1f}/100")
 
-        summary["Steps completed"] = f"{len(state['completed_steps'])}/{total_steps}"
-
+        # Step summary
         console.print()
-        console.print(make_summary_table(theme.COPY["analyze_complete"], summary))
+        console.print(f"  [{theme.BRAND_DIM}]{theme.DIVIDER_LIGHT}[/{theme.BRAND_DIM}]")
+        console.print(f"  [bold]  Steps completed[/bold]{completed_count:>20}/{completed_count + skipped_count}")
+        if skipped_count > 0:
+            console.print(f"  [bold]  Steps skipped[/bold]{skipped_count:>22}")
+        console.print(f"  [{theme.BRAND_DIM}]{theme.DIVIDER_LIGHT}[/{theme.BRAND_DIM}]")
 
-    print_suggested_next(
-        "linkedin-cleaner clean connections --dry-run",
-        "Next: preview cleanup decisions",
-    )
+        # What's next
+        console.print()
+        if skipped_count > 0:
+            console.print(f"  [dim]For better results, extract more data and re-run:[/dim]")
+            console.print(f"  [{theme.ACCENT}]  {theme.ARROW}  linkedin-cleaner extract --all[/{theme.ACCENT}]")
+            console.print()
+        console.print(f"  [{theme.BRAND_AMBER}]See your full dashboard:[/{theme.BRAND_AMBER}]")
+        console.print(f"  [{theme.ACCENT}]  {theme.ARROW}  linkedin-cleaner status[/{theme.ACCENT}]")
+        console.print()
+        console.print(f"  [{theme.BRAND_AMBER}]Preview cleanup decisions:[/{theme.BRAND_AMBER}]")
+        console.print(f"  [{theme.ACCENT}]  {theme.ARROW}  linkedin-cleaner clean connections --dry-run[/{theme.ACCENT}]")
+        console.print()

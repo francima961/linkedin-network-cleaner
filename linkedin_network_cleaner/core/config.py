@@ -156,7 +156,15 @@ def load_config():
     """Load linkedin-cleaner.toml from workspace. Returns dict with defaults."""
     defaults = {
         "extract": {"delay": 1.5, "enrichment_workers": 0},
-        "analyze": {"inbox_max": 10, "inbox_min": 5, "ai_model": "claude-sonnet-4-6", "ai_batch_size": 20},
+        "analyze": {
+            "dm_threshold": 5,
+            "keep_likers": True,
+            "keep_commenters": True,
+            "keep_reposters": True,
+            "keep_content_interactions": True,
+            "ai_model": "claude-sonnet-4-6",
+            "ai_batch_size": 20,
+        },
         "clean": {"ai_threshold": 50, "stale_days": 21, "batch_size": 25, "delay": 5},
     }
     config_path = WORKSPACE_DIR / "linkedin-cleaner.toml"

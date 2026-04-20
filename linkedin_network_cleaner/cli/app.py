@@ -28,20 +28,25 @@ app.command(name="doctor")(doctor_command)
 def main_callback(ctx: typer.Context):
     """LinkedIn Network Cleaner — Clean your network. Keep your people."""
     if ctx.invoked_subcommand is None:
-        from .ui import console, theme
+        from .ui import console, print_banner, print_section, print_tree, print_tree_pipe, theme
+
+        print_banner()
+        print_section("Commands")
+
+        D = theme.BRAND_DIM
+        G = theme.BRAND_GREEN
+        O = theme.BRAND_ORANGE
+
+        console.print(f"  [{D}]│[/{D}]")
+        console.print(f"  [{D}]├──[/{D}] [{O}]init[/{O}]      Set up credentials & workspace")
+        console.print(f"  [{D}]├──[/{D}] [{O}]extract[/{O}]   Pull your LinkedIn data")
+        console.print(f"  [{D}]├──[/{D}] [{O}]analyze[/{O}]   Score every connection with AI")
+        console.print(f"  [{D}]├──[/{D}] [{O}]clean[/{O}]     Preview & execute cleanup")
+        console.print(f"  [{D}]├──[/{D}] [{D}]status[/{D}]    Your network dashboard")
+        console.print(f"  [{D}]└──[/{D}] [{D}]doctor[/{D}]    Check your setup")
         console.print()
-        console.print(f"  [bold {theme.BRAND_GREEN}]linkedin-network-cleaner[/bold {theme.BRAND_GREEN}]  [dim]v{theme.APP_VERSION}[/dim]")
-        console.print(f"  [dim]{theme.APP_TAGLINE}[/dim]")
-        console.print()
-        console.print(f"  [{theme.ACCENT}]Commands:[/{theme.ACCENT}]")
-        console.print(f"    [bold]init[/bold]      Set up your workspace")
-        console.print(f"    [bold]extract[/bold]   Pull your LinkedIn data")
-        console.print(f"    [bold]analyze[/bold]   Score every connection")
-        console.print(f"    [bold]clean[/bold]     Preview & execute cleanup")
-        console.print(f"    [bold]status[/bold]    See where you are")
-        console.print(f"    [bold]doctor[/bold]    Check your setup")
-        console.print()
-        console.print(f"  [dim]Run linkedin-cleaner <command> --help for details[/dim]")
+        console.print(f"  [{D}]Get started:[/{D}]  [{O}]linkedin-cleaner init[/{O}]")
+        console.print(f"  [{D}]Need help:[/{D}]    [{O}]linkedin-cleaner <command> --help[/{O}]")
         console.print()
 
 
@@ -50,9 +55,9 @@ def roast_command():
     """The legendary --roast-my-network command."""
     from .ui import console, theme
     console.print()
-    console.print(f"  [{theme.BRAND_GREEN}]~ ❯ linkedin-cleaner --roast-my-network[/{theme.BRAND_GREEN}]")
+    console.print(f"  [{theme.BRAND_GREEN}]~ {theme.ARROW} linkedin-cleaner --roast-my-network[/{theme.BRAND_GREEN}]")
     console.print()
-    console.print(f"  [{theme.BRAND_AMBER}][warn] This is going to be awkward for some of you.[/{theme.BRAND_AMBER}]")
+    console.print(f"  [{theme.BRAND_AMBER}]{theme.CHECK_WARN} This is going to be awkward for some of you.[/{theme.BRAND_AMBER}]")
     console.print()
     from .commands.clean import clean_connections
     clean_connections(

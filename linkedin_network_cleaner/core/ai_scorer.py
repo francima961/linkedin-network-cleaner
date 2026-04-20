@@ -170,8 +170,8 @@ class TwoTierScorer:
             if col not in master_df.columns:
                 master_df[col] = None
 
-        # Tag real_network immediately
-        real_mask = master_df.get("real_network", False) == True  # noqa
+        # Tag active_dms immediately
+        real_mask = master_df.get("active_dms", False) == True  # noqa
         master_df.loc[real_mask, "ai_audience_fit"] = 100
         master_df.loc[real_mask, "ai_icp_tag"] = "REAL_NETWORK"
         master_df.loc[real_mask, "ai_reasoning"] = "Active relationship (10+ messages)"
@@ -190,7 +190,7 @@ class TwoTierScorer:
             "total_engagements": lambda s: s.fillna(0).astype(float) > 0,
         }
 
-        not_real = master_df.get("real_network", False) != True  # noqa
+        not_real = master_df.get("active_dms", False) != True  # noqa
         not_scored = master_df["ai_decision"].isna()
         eligible = not_real & not_scored
 
@@ -217,13 +217,13 @@ class TwoTierScorer:
 
         logger.info("Signal-based auto-keep: %d profiles (skipping AI)", signal_keep_count)
 
-        # Profiles that need scoring (after real_network + signal keeps)
+        # Profiles that need scoring (after active_dms + signal keeps)
         needs_scoring = (
-            (master_df.get("real_network", False) != True)  # noqa
+            (master_df.get("active_dms", False) != True)  # noqa
             & (master_df["ai_decision"].isna())
         )
         to_score = master_df.loc[needs_scoring].copy()
-        logger.info("Profiles to score: %d (skipping %d real_network, %d signal_keep)",
+        logger.info("Profiles to score: %d (skipping %d active_dms, %d signal_keep)",
                      len(to_score), real_mask.sum(), signal_keep_count)
 
         if to_score.empty:
@@ -574,7 +574,7 @@ class TwoTierScorer:
             (master_df.get("is_target_account", False).fillna(False).astype(bool)) |
             (master_df.get("is_target_prospect", False).fillna(False).astype(bool)) |
             (master_df.get("total_engagements", 0).fillna(0).astype(float) > 0) |
-            (master_df.get("real_network", False).fillna(False).astype(bool)) |
+            (master_df.get("active_dms", False).fillna(False).astype(bool)) |
             (master_df.get("i_liked_their_posts", 0).fillna(0).astype(float) > 0) |
             (master_df.get("i_commented_their_posts", 0).fillna(0).astype(float) > 0)
         )

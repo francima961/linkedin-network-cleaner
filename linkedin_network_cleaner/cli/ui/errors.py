@@ -17,7 +17,7 @@ def show_error(title: str, body: str, fix: str | None = None) -> None:
     """
     content = body
     if fix:
-        content += f"\n\n[dim]Fix:[/dim] [cyan]{fix}[/cyan]"
+        content += f"\n\n[dim]Fix:[/dim] [{theme.BRAND_ORANGE}]{fix}[/{theme.BRAND_ORANGE}]"
 
     console.print()
     console.print(Panel(

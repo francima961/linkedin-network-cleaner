@@ -201,16 +201,16 @@ class NetworkAnalyzer:
 
     # ── Step 2: Analyze Inbox ────────────────────────────────────────────
 
-    def analyze_inbox(self, master_df, inbox_max=10, inbox_min=5):
+    def analyze_inbox(self, master_df, dm_threshold=5, **_kwargs):
         """
-        Analyze conversation/message data to determine 'real network' connections.
+        Analyze conversation/message data to determine 'active_dms' connections.
 
-        A connection is 'real_network' if:
-            max(their_messages, my_messages) >= inbox_max AND
-            min(their_messages, my_messages) >= inbox_min
+        A connection has active DMs if:
+            total_messages >= dm_threshold AND
+            their_messages >= 1 AND my_messages >= 1
 
         Adds columns: conversation_count, total_messages, their_messages,
-                      my_messages, real_network
+                      my_messages, active_dms
         """
         # Load conversations (thread list with participants)
         conversations_data = self._load_latest_extract("conversations")
@@ -302,7 +302,7 @@ class NetworkAnalyzer:
         inbox_cols = ["conversation_count", "total_messages", "their_messages", "my_messages"]
         # Drop existing columns to avoid _x/_y suffixes on re-runs
         master_df = master_df.drop(
-            columns=[c for c in inbox_cols + ["real_network"] if c in master_df.columns],
+            columns=[c for c in inbox_cols + ["active_dms"] if c in master_df.columns],
             errors="ignore",
         )
         master_df = master_df.merge(
@@ -315,15 +315,16 @@ class NetworkAnalyzer:
         for col in inbox_cols:
             master_df[col] = master_df[col].fillna(0).astype(int)
 
-        # Compute real_network flag
-        master_df["real_network"] = (
-            (master_df[["their_messages", "my_messages"]].max(axis=1) >= inbox_max)
-            & (master_df[["their_messages", "my_messages"]].min(axis=1) >= inbox_min)
+        # Compute active_dms flag (both parties sent at least 1, total >= threshold)
+        master_df["active_dms"] = (
+            (master_df["total_messages"] >= dm_threshold)
+            & (master_df["their_messages"] >= 1)
+            & (master_df["my_messages"] >= 1)
         )
 
         logger.info(
-            "Inbox analysis complete: %d real_network connections out of %d",
-            master_df["real_network"].sum(), len(master_df),
+            "Inbox analysis complete: %d active DM relationships out of %d (threshold=%d)",
+            master_df["active_dms"].sum(), len(master_df), dm_threshold,
         )
         return master_df
 
@@ -377,7 +378,7 @@ class NetworkAnalyzer:
         df["total_messages"] = 0
         df["their_messages"] = 0
         df["my_messages"] = 0
-        df["real_network"] = False
+        df["active_dms"] = False
         return df
 
     # ── Step 3: Analyze Post Engagement ──────────────────────────────────

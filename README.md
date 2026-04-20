@@ -78,7 +78,7 @@ Extractions are checkpointed — if you hit a rate limit, resume later with `--r
 |------|-----------|----------------|
 | Connections | Your full connection list | The base dataset |
 | Followers | Who follows you | Follower overlap signals |
-| Conversations + Messages | Full inbox history | "Real network" detection |
+| Conversations + Messages | Full inbox history | Active DM relationship detection |
 | Posts + Engagement | Likers, commenters, reposters | Content engagement signals |
 | Reaction + Comment Activity | Posts you engaged with | Reciprocal engagement |
 | Sent Invitations | Pending connection requests | Stale invite cleanup |
@@ -100,7 +100,7 @@ linkedin-cleaner analyze --step 5           # Run a single step
 | Step | What it does | Signal produced |
 |------|-------------|----------------|
 | 1 | Build base (connections + followers) | Master DataFrame |
-| 2 | Analyze inbox activity | `real_network` flag, message counts |
+| 2 | Analyze inbox activity | `active_dms` flag, message counts |
 | 3 | Analyze post engagement | Like/comment/repost counts |
 | 4 | Analyze content interactions | Your engagement with their posts |
 | 5 | Enrich for matching | Shared schools, shared work experience |
@@ -142,7 +142,7 @@ The dry-run shows a full breakdown: who's being kept and why, who's getting cut 
 | 4 | Engaged with your content | Keep |
 | 5 | Shared school or work experience | Keep |
 | 6 | AI score >= threshold (default 50) | Keep |
-| 7 | Two-way messages (but not "real network") | Review |
+| 7 | Two-way messages (below DM threshold) | Review |
 | 8 | Everything else | Remove |
 
 **Safety controls:**
@@ -171,8 +171,11 @@ delay = 1.5                    # Seconds between API calls
 enrichment_workers = 0         # 0 = auto-detect
 
 [analyze]
-inbox_max = 10                 # Messages threshold for "real network"
-inbox_min = 5
+dm_threshold = 5               # Min total DMs for active relationship
+keep_likers = true             # Keep people who liked your posts
+keep_commenters = true         # Keep people who commented on your posts
+keep_reposters = true          # Keep people who reposted your content
+keep_content_interactions = true # Keep people whose content you engaged with
 ai_model = "claude-sonnet-4-6"
 ai_batch_size = 20
 

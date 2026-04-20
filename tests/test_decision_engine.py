@@ -9,11 +9,11 @@ class TestDecideConnections:
     def setup_method(self):
         self.engine = DecisionEngine(ai_threshold=50)
 
-    def test_real_network_always_keeps(self, sample_master_df):
+    def test_active_dms_always_keeps(self, sample_master_df):
         result = self.engine.decide_connections(sample_master_df)
-        real_network_row = result[result["full_name"] == "Real Network Person"].iloc[0]
-        assert real_network_row["decision"] == "keep"
-        assert "real network" in real_network_row["decision_reason"].lower()
+        row = result[result["full_name"] == "Active DM Person"].iloc[0]
+        assert row["decision"] == "keep"
+        assert "dm" in row["decision_reason"].lower() or "active" in row["decision_reason"].lower()
 
     def test_customer_keeps(self, sample_master_df):
         result = self.engine.decide_connections(sample_master_df)
@@ -36,7 +36,7 @@ class TestDecideConnections:
         result = self.engine.decide_connections(sample_master_df)
         row = result[result["full_name"] == "Engaged Follower"].iloc[0]
         assert row["decision"] == "keep"
-        assert "engagement" in row["decision_reason"].lower() or "engag" in row["decision_reason"].lower()
+        assert "liked" in row["decision_reason"].lower() or "engag" in row["decision_reason"].lower()
 
     def test_high_ai_score_keeps(self, sample_master_df):
         result = self.engine.decide_connections(sample_master_df)

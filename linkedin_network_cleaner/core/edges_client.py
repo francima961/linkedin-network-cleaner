@@ -72,6 +72,42 @@ class EdgesClient:
             return None
         return data
 
+    # ── Identity Management (no instance needed) ─────────────────────────
+
+    @staticmethod
+    def list_identities(api_key, base_url="https://api.edges.run/v1"):
+        """List all identities for the API key. Returns list of identity dicts or raises."""
+        resp = requests.get(
+            f"{base_url}/identities?retrieve_accounts=true",
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    @staticmethod
+    def create_identity(api_key, name, timezone="UTC", base_url="https://api.edges.run/v1"):
+        """Create a new identity. Returns identity dict with uid + login links."""
+        resp = requests.post(
+            f"{base_url}/identities",
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            json={"name": name, "timezone": timezone},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    @staticmethod
+    def generate_login_link(api_key, identity_uid, base_url="https://api.edges.run/v1"):
+        """Generate a fresh LinkedIn login link for an existing identity."""
+        resp = requests.post(
+            f"{base_url}/identities/{identity_uid}/generate-login-links",
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def call_action(self, action_slug, input_data=None, direct_mode=False,
                     parameters=None, query_params=None):
         """
@@ -91,7 +127,8 @@ class EdgesClient:
 
     def paginated_call(self, action_slug, input_data=None, direct_mode=False,
                        parameters=None, query_params=None, dedup_key=None,
-                       max_pages=10000, max_empty=20, cursor_only=False):
+                       max_pages=10000, max_empty=20, cursor_only=False,
+                       max_results=None, progress_callback=None):
         """
         Call an action with pagination, collecting all pages.
         Uses cursor-based pagination (X-Pagination-Next header) first.
@@ -167,6 +204,17 @@ class EdgesClient:
             elif isinstance(data, dict):
                 all_results.append(data)
                 logger.info("Page %d: 1 result (dict)", page)
+
+            # Progress callback
+            if progress_callback:
+                page_count = len(data) if isinstance(data, list) else 1
+                progress_callback(page, page_count, len(all_results))
+
+            # Max results cap
+            if max_results and len(all_results) >= max_results:
+                all_results = all_results[:max_results]
+                logger.info("Reached max_results=%d — stopping pagination", max_results)
+                break
 
             if not use_page_numbers:
                 # Check for next page cursor

@@ -109,8 +109,11 @@ delay = 1.5           # Seconds between API calls
 workers = 4           # Concurrent enrichment workers
 
 [analyze]
-inbox_max = 10        # Upper inbox score threshold
-inbox_min = 5         # Lower inbox score threshold
+dm_threshold = 5      # Min total DMs for active relationship
+keep_likers = true    # Keep people who liked your posts
+keep_commenters = true
+keep_reposters = true
+keep_content_interactions = true
 ai_batch_size = 20    # Profiles per AI API call
 
 [clean]

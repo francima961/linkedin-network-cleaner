@@ -87,8 +87,7 @@ linkedin-cleaner analyze [OPTIONS]
 | `--resume` | Resume from last completed step | Off |
 | `--no-ai` | Run steps 1–8 only, skip AI scoring | Off |
 | `--step N` | Run only step N | All steps |
-| `--inbox-max N` | Upper inbox score threshold | 10 |
-| `--inbox-min N` | Lower inbox score threshold | 5 |
+| `--dm-threshold N` | Min total DMs for active relationship | 5 |
 | `--ai-batch-size N` | Profiles per AI API call | 20 |
 | `--profile-url URL` | Your LinkedIn profile URL (auto-detected if omitted) | Auto |
 | `--limit N` | Sample N rows for testing | All rows |
