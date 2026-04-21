@@ -44,19 +44,27 @@ This tool audits every connection in your network, scores them for relevance, an
 
 ## Install
 
+**Mac:**
+```bash
+brew install python3
+pip3 install linkedin-network-cleaner
+```
+
+**Windows:**
+```bash
+winget install Python.Python.3.13
+pip install linkedin-network-cleaner
+```
+
+**Already have Python?**
 ```bash
 pip install linkedin-network-cleaner
 ```
 
-That's it. One command.
-
-> **Prefer isolation?** Use [pipx](https://pipx.pypa.io/) instead:
+> **Nothing working?** This script installs everything automatically:
 > ```bash
-> pipx install linkedin-network-cleaner
+> curl -sSL https://raw.githubusercontent.com/francima961/linkedin-network-cleaner/main/install.sh | bash
 > ```
-> Don't have pipx? `brew install pipx` (Mac) or `pip install pipx`.
-
-> **Don't have Python?** Download it at [python.org/downloads](https://www.python.org/downloads/). Get version 3.10 or newer. After installing, the `pip` command will be available in your terminal.
 
 ---
 
